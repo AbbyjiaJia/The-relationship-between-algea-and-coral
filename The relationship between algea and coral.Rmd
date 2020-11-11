@@ -1,0 +1,284 @@
+
+```{r Setup, include=FALSE}
+
+# Relevent R libraries
+library(tidyverse)
+library(readr)
+library(leaflet)
+library(ggmap)
+library(knitr)
+library(kableExtra)
+library(lubridate)
+library(gridExtra)
+library(ggplot2)
+library(mapview)
+library(viridis)
+library(rgdal)
+library(dplyr)
+library(kableExtra)
+library(knitr)
+```
+
+# Introduction
+The Great Barrier Reef is referred as one of the most biologically diverse places on Earth, and it inhabits many endangered ocean species and helps to mitigate climate change @Sheffer2018. However, Bragdon states that the Great Barrier Reef could disappear within 30 years @Bragdon2019. Thus, the motivation of this report is to investigate the reasons why the Great Barrier Reef are degrading and understand the condition of it. Furthermore, according to the report @Brownand2018stl, algae abundance is one factor for the Great Barrier Reef deter deteriorating. Therefore, the problem of interest is to analyse and verify whether the amount of algae have some impacts on reefs based on different regions.
+
+
+
+# Data
+In this report, two data sources are selected to analyse when evaluating the condition of thr Great Barrier Reef. The first data source is _"Reef Plan monitoring of inshore coral reef communities, Great Barrier Reef"_ which is released by Australian Institute of Marine Science **[RRMMP](https://apps.aims.gov.au/metadata/view/c30cfb2d-46be-4837-9733-9bb60489b65b)**. The dataset is _"MMP photo transect data summarised by broad benthic groups"_ in a .csv format.The second is geoportal data about **[Great Barrier Reef Features](http://www.gbrmpa.gov.au/geoportal/catalog/download/download.page)** and **[Great Barrier Reef Marine Park Boundary](http://www.gbrmpa.gov.au/geoportal/catalog/download/download.page)** which is published by Great Barrier Reef Marine Park Authority. This dataset is in an ESRI ShapeFile format.
+
+Although these data are all released by Australian government departments and official agencies, there are still some limitations that might affect possible analysis and conclusions. For Marine Monitoring Program (inshore coral reef), some locations on the Geographic areas have missing data about the year relate to Natural Resource Management @AIMS2014. Besides, the research data are subject to variation by natural factors such as the rainy season, floods, cyclone. For geoportal data, shapefiles have serious problems with attributes. For instance, shapefiles cannot store date and time in a field at the same time. In addition, shapefiles cannot store null values and round up numbers @ESRI2019. As result, the accuracy of the analysis and conclusion of this article will be affected.
+
+
+```{r read data, fig.cap=" ", echo = FALSE, message = FALSE, warning=FALSE, results = 'hide'}
+mmp <- read_csv(file = "data/mmp_hc_sc_a_by_site/mmp_hc_sc_a_by_site.csv", col_types = cols())
+```
+
+# Sampling location and hard coral cover
+The sampling locations are selected and monitored by the Marine monitoring program spanning four NRM regions. There are Wet Tropics, Burdekin, Mackay Whitsunday and Fitzroy Basin Association. As shown in figure 1 and figure 2. the points represent the hard coral cover which is below 20% in the four sampling locations. It shows that these locations need to search for the reason about the lower cover in hard coral. 
+
+```{r read_shp, fig.cap=" ",echo = FALSE, fig.align= 'left', message=FALSE, warning=FALSE, results = 'hide'}
+# Marine Park Boundary
+shp_MPboundary <- readOGR(dsn = ("data/shp/Great_Barrier_Reef_Marine_Park_Boundary.shp"), stringsAsFactors = F)
+
+# Examine shape data
+#summary(shp_MPboundary@data)
+
+# GBR features
+shp_GBRfeatures <- readOGR(dsn = ("data/shp/Great_Barrier_Reef_Features.shp"), stringsAsFactors = F)
+```
+
+
+
+```{r MMP_samplingGBRMPBoundary, echo = FALSE, fig.align="left", message=FALSE, warning=FALSE, fig.width=6, fig.height=3}
+MMP_GBRBoundary = mmp %>% dplyr::filter(GROUP_CODE == "Hard Coral",
+                                        COVER < "20")
+
+# Plot Figure_1.MMP sampling locations with GBRMPBoundary
+Fig1_MMP_GBRMPBoundary <- ggplot()+
+  geom_polygon(data = shp_MPboundary, 
+               mapping = aes(x = long, y = lat, group = group), 
+               colour = "black", fill = NA, 
+               linetype = "dashed", size = 0.5) +
+  geom_point(data = MMP_GBRBoundary, aes(x = LONGITUDE, y = LATITUDE, color = NRM_REGION))+
+  theme_bw() +
+  ggtitle("Figure_1.MMP_GBRMPBoundary")
+
+print(Fig1_MMP_GBRMPBoundary)
+
+```
+
+
+
+```{r , MMP_samplingGBRfeatures, echo = FALSE, fig.align= 'left', message=FALSE, warning=FALSE, fig.width=6, fig.height=3}
+MMP_GBRfeatures = mmp %>% dplyr::filter(GROUP_CODE == "Hard Coral",
+                                        COVER < "20")
+
+# Plot Figure_2.MMP sampling locations with GBRfeatures
+Fig2_MMP_GBRfeatures <- ggplot()+
+  geom_polygon(data = shp_GBRfeatures, 
+               mapping = aes(x = long, y = lat, group = group),
+               colour = "black", fill = NA, 
+               linetype = "dashed", size = 0.5) +
+  geom_point(data = MMP_GBRfeatures, aes(x = LONGITUDE, y = LATITUDE, color = NRM_REGION))+
+  theme_light() +
+  ggtitle("Figure_2.MMP_GBRfeatures")
+ 
+print(Fig2_MMP_GBRfeatures)
+```
+
+
+In order to more specific explore the hard coral cover. First, by taking hard coral and algae at two meters depth as example to investigate the cover trend in the whole NRM regions. 
+ 
+# The yearly hard coral and algae means
+```{r , Yearly hard coral and algae cover, echo = FALSE, fig.align= 'left', message=FALSE, warning=FALSE, fig.width=6, fig.height=5}
+
+# Calculate the yearly hard coral cover by NRM_Region
+Yearly_HardCoral = mmp %>% dplyr::filter(GROUP_CODE == "Hard Coral",
+                              DEPTH =="2")%>%
+  mutate(Year = year(SAMPLE_DATE))%>%
+  group_by(NRM_REGION, GROUP_CODE, Year) %>%
+  summarise(covermean = mean(COVER, na.rm = TRUE),
+                        coversd = sd(COVER, na.rm = TRUE),
+                        samplesize = n()) %>%
+  mutate(upper = covermean + coversd/sqrt(samplesize),
+         lower = covermean - coversd/sqrt(samplesize)) 
+
+# Calculate the yearly algae cover by NRM_Region
+Yearly_Algae = mmp %>% dplyr::filter(GROUP_CODE == "Algae",
+                              DEPTH =="2")%>%
+  mutate(Year = year(SAMPLE_DATE))%>%
+  group_by(NRM_REGION, GROUP_CODE, Year) %>%
+  summarise(covermean = mean(COVER, na.rm = TRUE),
+                        coversd = sd(COVER, na.rm = TRUE),
+                        samplesize = n()) %>%
+  mutate(upper = covermean + coversd/sqrt(samplesize),
+         lower = covermean - coversd/sqrt(samplesize)) 
+ 
+#  Plot Figure_3.Yearly Average Hard Coral Cover and Algae Cover in 2 Meters Depth
+  ggplot() +
+  # Line&Ribbon for Hard Coral
+  geom_line(data = Yearly_HardCoral, aes(x = Year, y = covermean), color = "black") +
+  geom_ribbon(data = Yearly_HardCoral, aes(x = Year, y = covermean, ymin = lower, ymax = upper), fill = "blue", alpha = 0.4) +
+  # Line&Ribbon for Algae
+  geom_line(data = Yearly_Algae, aes(x = Year, y = covermean), color = "black") +
+  geom_ribbon(data = Yearly_Algae, aes(x = Year, y = covermean, ymin = lower, ymax = upper), fill = "red", alpha = 0.4) +
+  # Categorize by NRM_REGION
+  facet_wrap(~NRM_REGION, ncol = 1) +
+  ggtitle("Figure_3.Yearly Average Hard Coral Cover and Algae Cover in 2 Meters Depth", subtitle = "Blue = Hard coral,       Red = Algae")
+
+```
+As shown in figure 3, the average algae cover noticeably higher than the average hard coral cover from 2005 to 2018 in the Burdekin. Meanwhile, the same situation happens in the Fitzroy Basin Association. It can be seen the average cover of algae is obviously higher than the average cover of hard coral from 2010 to 2018. The algae cover mean in the Fitzroy Basin Association increase rapidly from 2010. Inversely, the average hard coral cover remains at the same level as the average algae cover in Mackay / Whitsunday. In the Wet Tropics, the average algae cover and the average hard coral cover basically remains stable from 2005 to 2018. But the overall average hard coral cover is lower than the overall average algae cover. In general, the lowest average hard coral cover is in Burdekin. In Mackay / Whitsunday, the average hard coral and algae maintain the balance from 2005 to 2016. while the trend shows the average algae cover to be on the rise and hard coral cover declines in Mackay / Whitsunday from 2017.
+ 
+
+```{r Calculate hard coral, soft coral and algae mean ,echo = FALSE, fig.align= 'center', message=FALSE, warning=FALSE, results = 'hide'} 
+
+# Calculate the mean value of Hard Coral
+Hardcoral_mean = mmp %>% dplyr::filter(GROUP_CODE == "Hard Coral",
+                                 NRM_REGION == "Mackay / Whitsunday",
+                                 YEAR_CODE == "2017")%>%
+ 
+summarize_at(vars(COVER), list(covermean = mean)) %>% round(2) 
+
+
+
+# Calculate the mean value of Soft Coral
+Softcoral_mean = mmp %>% dplyr::filter(GROUP_CODE == "Soft Coral",
+                                 NRM_REGION == "Mackay / Whitsunday",
+                                 YEAR_CODE == "2017")%>%
+ 
+summarize_at(vars(COVER), list(covermean = mean)) %>% round(2) 
+
+
+# Calculate the mean value of Algae
+Algae_mean = mmp %>% dplyr::filter(GROUP_CODE == "Algae",
+                                 NRM_REGION == "Mackay / Whitsunday",
+                                 YEAR_CODE == "2017")%>%
+ 
+summarize_at(vars(COVER), list(covermean = mean)) %>% round(2)  
+
+
+```
+
+
+| Table 1. Hard coral, Soft coral and Algae mean value at Mackay/Whitsunday region in 2017 |
+| ----------- | ----------- |
+| Hard coral mean      | _**`r Hardcoral_mean`**_       |
+| Soft coral mean   | _**`r Softcoral_mean`**_        |
+| Algae Mean   | _**`r Algae_mean`**_        |
+
+As presented in Table 1. the average hard coral cover at Mackay / Whitsunday region in 2017 is _**`r Hardcoral_mean`**_. While the average algae cover at Mackay / Whitsunday region in 2017 is _**`r Algae_mean`**_. According to the annual report published by the Marine Monitoring Program @AIMS2019. The main reason for the coral cover delines is due to cyclone  Debbie. The influence of cyclone  Debbie is most obvious at two meters depth.  Thus, the data for the coral cover, algae,  juvenile density, and water composition indexes changes greatly during this period. 
+
+&nbsp;
+
+# The relationship between algae and hard coral cover\
+
+```{r Making linear regression model ,echo = FALSE, fig.align= 'center', message=FALSE, warning=FALSE, results = FALSE, fig.width=6, fig.height=5} 
+
+Relation_HardnAlgae = mmp %>% dplyr::filter(GROUP_CODE %in% c("Hard Coral","Algae"),
+                                   NRM_REGION == "Fitzroy Basin Association",
+                                   DEPTH == "5") %>%                  
+  mutate(Year = year(SAMPLE_DATE)) %>%
+  group_by(Year, GROUP_CODE) %>%
+  summarize_at(vars(COVER), list(covermean = mean), na.rm = TRUE) %>%
+  pivot_wider(names_from = GROUP_CODE, values_from = covermean)
+head(Relation_HardnAlgae)
+
+  ggplot(Relation_HardnAlgae, aes(x = `Hard Coral`, y = Algae)) +
+  ggtitle("Figure_4.The relationship between Hardcoral and Algae", subtitle = "At 5 meters depth in Fitzroy Basin Association")+
+  geom_point() 
+
+```
+As shown in figure 4, there is the linear relationship between hard coral cover and aglas at 5 meters depth in the Fitzroy Basin Association. Besides, it presents a downward slop which means the more algae, the less hard coral in the reefs. 
+
+
+# Simple linear regression for prediction
+```{r, echo = FALSE, fig.align = "center", echo = FALSE, message=FALSE, warning=FALSE, results = FALSE}
+HardCoralcover = Relation_HardnAlgae$`Hard Coral`
+
+reg = lm(Algae ~ HardCoralcover, data = Relation_HardnAlgae)
+
+```
+
+```{r fig.cap=" ", echo = FALSE, message=FALSE, warning=FALSE, results = FALSE}
+Relation_HardnAlgae$predicted <- predict(reg)
+
+Relation_HardnAlgae$residuals <- residuals(reg)
+
+head(reg)
+
+```
+
+```{r , echo = FALSE, fig.align= 'center', echo = FALSE, message=FALSE, warning=FALSE, results = FALSE, fig.width=6, fig.height=5}
+
+ggplot(Relation_HardnAlgae, aes(x = `Hard Coral`, y = Algae)) +
+  geom_smooth(method = "lm", se = FALSE, color = "lightblue") +
+  geom_segment(aes(xend = `Hard Coral`, yend = predicted), alpha = .2) +
+  geom_point(aes(color = abs(residuals), size = abs(residuals))) + 
+  scale_color_continuous(low = "#FF9933", high = "#33FF33") +
+  guides(color = FALSE, size = FALSE) +  
+  geom_point(aes(y = predicted), shape = 1) +
+  theme_bw() +
+  ggtitle("Fig_5.Linear regression model between hard coral and algae")
+```
+
+ 
+
+
+```{r , echo = FALSE, fig.align= 'center'}
+# Prediction of algae coverage when coral cover is 25
+
+Hardcoral_25 <- data.frame(HardCoralcover = c(25))
+
+Algae_abundance = predict(reg, newdata = Hardcoral_25)%>% round(2)
+
+```
+As shown in figure 5, in order to further prove the relationship of hard coral and algae, when coral cover is *25*, the estimated algae abundance is _**`r Algae_abundance`**_  which presents the inverse relationship between hard coral and algae. However, as shown in figure 5, the estimates have deviations with the actual value of hard coral and algae. It can be demonstrated that the estimations are not very precise which might be affected by other natural or human factors. 
+
+
+# Method
+To explore the yearly hard coral and algae average values in different regions, the mean and standard error methods are used in this report. By iteratively applying the method of mean and standard error about hard coral and algae cover on the same time period and depth but with different regions. To visually understand the yearly trend of hard coral and algae.
+
+Besides, to analyse the relationship between hard coral and algae. The linear regression model is produced using the package _ggplot2_ in R version software. By comparing the estimate and actual values of hard coral and algae in the same time period, depth and region to explore the relationship.
+
+
+# Conclusion
+This report mainly discusses the condition of the Great Barrier Reef by evaluating the relationship between hard coral and algae using different locations with yearly intervals to observe the situation of the Great Barrier Reef. As presented in figure 3, the average hard coral cover during these decades are always lower than algae cover. Moreover, it shows the differences between hard coral and algae are different in four regions. To be more specific, as proved in figure 5, the reduction in coral cover and concurrently increasing in algae are observed in this report. It shows an inverse relationship between hard corals and algae at 2 meters and 5 meters depth. In addition, based on the linear regression model built upon the wrangled data, results from this report demonstrate that algae abundance is enhanced to the detriment of corals. While, during a certain period of time, the relationship between algae and coral will change due to unpredictable factors.
+
+On the other hand, as reported by the Australian Marine Conservation Society @AMCS2019, algae abundance is one of the causes of degrade to the Great Barrier Reef. The factors that threaten the Great Barrier Reef are multiple and cumulative, including hotter and more frequent bushfires, long-term rainfall patterns, droughts, poor water quality, and warming oceans. As illustrated, the current condition of the Great Barrier Reef is downgrading. 
+ 
+
+
+# Reference
+
+Australian Marine conservation Society. (2019). World Heritage Status of the Great Barrier Reef: Avoiding an 'in danger' listing in 2020. Retrieved from
+https://www.marineconservation.org.au/avoiding-an-in-danger-listing-at-world-heritage-great-barrier-reef/
+
+&nbsp;
+
+Australian Institute of Marine Science (AIMS). (2014), Reef Plan monitoring of inshore coral reef communities, Great Barrier Reef (RRMMP), https://doi.org/10.25845/5cc64f29b35a1, accessed 14-May-2020.
+
+&nbsp;
+
+Bragdon, A. (2019). The Great Barrier Reef is at a critical tipping point and could disappear by 2050. Retrieved from https://www.businessinsider.com.au/great-barrier-reef-could-disappear-by-2050-why-2019-10?r=US&IR=T
+
+&nbsp;
+
+Brown KT, Bender-Champ D, Kubicek A, van der Zande R, Achlatis M, Hoegh-Guldberg O and Dove SG (2018) The Dynamics of Coral-Algal Interactions in Space and Time on the Southern Great Barrier Reef. Front. Mar. Sci. 5:181. doi: 10.3389/fmars.2018.00181
+
+&nbsp;
+
+ESRI. (2019). Geoprocessing considerations for shapefile output. Retrieved from http://resources.esri.com/help/9.3/ArcGISDesktop/com/Gp_ToolRef/geoprocessing_tool_reference/geoprocessing_considerations_for_shapefile_output.htm
+
+&nbsp;
+
+Great Barrier Reef Marine Park Authority. (2019). Marine Monitoring Program: Annual report for inshore pesticide monitoring 2017-18. Retrieved from http://hdl.handle.net/11017/3489
+
+&nbsp;
+
+Sheffer, A. (2018). Global warming is killing the Great Barrier Reef — here's why that matters. Retrieved from https://hellogiggles.com/news/why-is-great-barrier-reef-important/
+
+
+
+
+
